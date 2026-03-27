@@ -4,6 +4,10 @@ project(waffle VERSION 0.1 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+if(MSVC)
+    add_compile_options(/Zc:__cplusplus /permissive-)
+endif()
+
 find_package(Qt6 COMPONENTS Widgets QUIET)
 if(NOT Qt6_FOUND)
     find_package(Qt5 COMPONENTS Widgets REQUIRED)
