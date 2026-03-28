@@ -19,5 +19,7 @@ endif()
 set(CMAKE_AUTOMOC ON)
 
 add_executable(waffle main.cpp)
+add_executable(copyimage copyimage.cpp)
 
 target_link_libraries(waffle PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
+target_link_libraries(copyimage PRIVATE gdiplus ole32)

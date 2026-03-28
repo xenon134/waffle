@@ -14,6 +14,8 @@
 #include <QPainter>
 #include <QStringList>
 #include <QDir>
+#include <QClipboard>
+#include <QProcess>
 
 class ImageViewer : public QWidget {
 public:
@@ -21,7 +23,7 @@ public:
 
     ImageViewer() {
         setWindowTitle("Waffle");
-        resize(800, 600);
+        resize(1043, 600);
         setStyleSheet("background-color: #eef3fa; color: black;");
 
         auto *mainLayout = new QVBoxLayout(this);
@@ -44,16 +46,43 @@ public:
         bottomBar->setFixedHeight(50);
         bottomBar->setStyleSheet("background-color: #2b2b2b; color: white;");
         auto *bottomLayout = new QHBoxLayout(bottomBar);
-        
-        auto *btnPrev = new QPushButton("Previous");
-        auto *btnNext = new QPushButton("Next");
-        auto *btnFit = new QPushButton("Fit");
-        auto *btnOne = new QPushButton("One");
+        bottomLayout->setContentsMargins(10, 0, 10, 0);
+
+        // Left info zone (between left edge and buttons)
+        infoLabelLeft = new QLabel;
+        infoLabelLeft->setStyleSheet("font-family: 'Courier New', monospace; color: white; font-size: 18px;");
+        infoLabelLeft->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        infoLabelLeft->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+        infoLabelLeft->setMinimumWidth(0);
+        bottomLayout->addWidget(infoLabelLeft, 1);
+
+        // Center button zone
+        auto *buttonContainer = new QWidget;
+        auto *buttonLayout = new QHBoxLayout(buttonContainer);
+        buttonLayout->setContentsMargins(0, 0, 0, 0);
+        buttonLayout->setSpacing(10);
+
+        auto *btnPrev = new QPushButton("\u2190"); // left arrow
+        auto *btnNext = new QPushButton("\u2192"); // right arrow
+        auto *btnFit = new QPushButton("\u26f6");
+        auto *btnOne = new QPushButton("1:1");
+        // auto *btnMinus = new QPushButton("-");
+        // auto *btnPlus = new QPushButton("+");
+        auto *btnCopy = new QPushButton("\u2398");
+        auto *btnReload = new QPushButton("\u27f3");
+        auto *btnEdit = new QPushButton("\u270e"); // pencil icon
+        auto *btnDelete = new QPushButton("X");
         
         btnPrev->setFocusPolicy(Qt::NoFocus);
         btnNext->setFocusPolicy(Qt::NoFocus);
         btnFit->setFocusPolicy(Qt::NoFocus);
         btnOne->setFocusPolicy(Qt::NoFocus);
+        // btnMinus->setFocusPolicy(Qt::NoFocus);
+        // btnPlus->setFocusPolicy(Qt::NoFocus);
+        btnCopy->setFocusPolicy(Qt::NoFocus);
+        btnReload->setFocusPolicy(Qt::NoFocus);
+        btnEdit->setFocusPolicy(Qt::NoFocus);
+        btnDelete->setFocusPolicy(Qt::NoFocus);
         scrollArea->setFocusPolicy(Qt::NoFocus);
         
         QString btnStyle = "background-color: #444; border: 1px solid #555; padding: 5px 15px; border-radius: 3px;";
@@ -61,13 +90,34 @@ public:
         btnNext->setStyleSheet(btnStyle);
         btnFit->setStyleSheet(btnStyle);
         btnOne->setStyleSheet(btnStyle);
+        // btnMinus->setStyleSheet(btnStyle);
+        // btnPlus->setStyleSheet(btnStyle);
+        btnCopy->setStyleSheet(btnStyle);
+        btnReload->setStyleSheet(btnStyle);
+        btnEdit->setStyleSheet(btnStyle);
+        btnDelete->setStyleSheet(btnStyle);
 
-        bottomLayout->addWidget(btnPrev);
-        bottomLayout->addWidget(btnNext);
-        bottomLayout->addSpacing(20);
-        bottomLayout->addWidget(btnFit);
-        bottomLayout->addWidget(btnOne);
-        bottomLayout->addStretch();
+        buttonLayout->addWidget(btnPrev);
+        buttonLayout->addWidget(btnNext);
+        buttonLayout->addWidget(btnFit);
+        buttonLayout->addWidget(btnOne);
+        // buttonLayout->addWidget(btnPlus);
+        // buttonLayout->addWidget(btnMinus);
+        buttonLayout->addWidget(btnCopy);
+        buttonLayout->addWidget(btnReload);
+        buttonLayout->addWidget(btnEdit);
+        buttonLayout->addWidget(btnDelete);
+
+        buttonContainer->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
+        bottomLayout->addWidget(buttonContainer, 0, Qt::AlignCenter);
+
+        // Right info zone (between buttons and right edge)
+        infoLabelRight = new QLabel;
+        infoLabelRight->setStyleSheet("color: white; font-size: 18px;");
+        infoLabelRight->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        infoLabelRight->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+        infoLabelRight->setMinimumWidth(0);
+        bottomLayout->addWidget(infoLabelRight, 1, Qt::AlignCenter);
         
         mainLayout->addWidget(bottomBar);
 
@@ -78,6 +128,33 @@ public:
         });
         connect(btnOne, &QPushButton::clicked, this, [this]() {
             setZoomState(ZoomState::One);
+        });
+        // connect(btnMinus, &QPushButton::clicked, this, [this]() { zoomOffset(-1); });
+        // connect(btnPlus, &QPushButton::clicked, this, [this]() { zoomOffset(1); });
+        connect(btnCopy, &QPushButton::clicked, this, [this]() {
+            if (!images.isEmpty()) {
+                QString exePath = QCoreApplication::applicationDirPath() + "/copyimage.exe";
+                QProcess::startDetached(exePath, QStringList() << images[currentImageIndex]);
+                infoLabelRight->setText("Copied to clipboard!");
+            }
+        });
+        connect(btnReload, &QPushButton::clicked, this, [this]() {
+            if (!images.isEmpty()) {
+                loadImage(images[currentImageIndex]);
+                infoLabelRight->setText("Reloaded!");
+            }
+        });
+        connect(btnEdit, &QPushButton::clicked, this, [this]() {
+            if (!images.isEmpty()) {
+                QProcess::startDetached("mspaint.exe", QStringList() << images[currentImageIndex]);
+                infoLabelRight->setText("Opened in editor");
+            }
+        });
+        connect(btnDelete, &QPushButton::clicked, this, [this]() {
+            if (!images.isEmpty()) {
+                QProcess::startDetached("C:\\tools\\delet.exe", QStringList() << images[currentImageIndex]);
+                infoLabelRight->setText("Deleted!");
+            }
         });
 
         zoomState = ZoomState::Fit;
@@ -154,20 +231,35 @@ protected:
     }
 
     void wheelEvent(QWheelEvent *event) override {
+        zoomOffset(event->angleDelta().y());
+    }
+
+private:
+    void zoomOffset(int direction) {
         if (originalPixmap.isNull()) return;
 
-        int angle = event->angleDelta().y();
-        if (angle > 0) {
-            zoomLevel += 0.2;
-        } else if (angle < 0) {
-            zoomLevel -= 0.2;
-            if (zoomLevel < 0.1) zoomLevel = 0.1;
+        double currentZoom;
+        if (zoomState == ZoomState::Fit) {
+            currentZoom = (double)imageLabel->pixmap().width() / originalPixmap.width();
+        } else if (zoomState == ZoomState::One) {
+            currentZoom = 1.0;
+        } else {
+            currentZoom = zoomLevel;
+        }
+
+        if (direction > 0) {
+            if (currentZoom < 0.1) zoomLevel = currentZoom / 0.8;
+            else zoomLevel = currentZoom + 0.1;
+        } else if (direction < 0) {
+            if (currentZoom < 0.2) zoomLevel = currentZoom * 0.8;
+            else zoomLevel = currentZoom - 0.1;
+            double minZoom = 1.0 / std::min(originalPixmap.width(), originalPixmap.height());
+            if (zoomLevel < minZoom) zoomLevel = minZoom;
         }
         zoomState = ZoomState::Custom;
         updateImage();
     }
 
-private:
     void setZoomState(ZoomState state) {
         zoomState = state;
         if (state == ZoomState::One) {
@@ -204,10 +296,40 @@ private:
 
         imageLabel->setPixmap(scaledPixmap);
         imageLabel->resize(scaledPixmap.size());
+
+        updateInfoDisplay();
+    }
+
+    void updateInfoDisplay() {
+        if (originalPixmap.isNull()) {
+            infoLabelLeft->clear();
+            infoLabelRight->clear();
+            return;
+        }
+
+        // Current image index / total images
+        QString indexStr = QString("%1/%2").arg(currentImageIndex + 1).arg(images.size());
+
+        // Zoom level calculation
+        double actualZoom;
+        if (zoomState == ZoomState::Fit) {
+            actualZoom = (double)imageLabel->pixmap().width() / originalPixmap.width();
+        } else if (zoomState == ZoomState::One) {
+            actualZoom = 1.0;
+        } else {
+            actualZoom = zoomLevel;
+        }
+
+        QString zoomStr = QString("%1x").arg(actualZoom, 0, 'f', 3);
+        QString resolutionStr = QString("%1 x %2").arg(originalPixmap.width()).arg(originalPixmap.height());
+
+        infoLabelLeft->setText(QString("%1   %2    %3").arg(indexStr, zoomStr, resolutionStr));
     }
 
     QLabel *imageLabel;
     QScrollArea *scrollArea;
+    QLabel *infoLabelLeft;
+    QLabel *infoLabelRight;
     QPixmap originalPixmap;
     ZoomState zoomState;
     double zoomLevel;
