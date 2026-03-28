@@ -52,3 +52,5 @@ CTestTestfile.cmake
 
 # debug information files
 *.dwo
+
+testfiles/
