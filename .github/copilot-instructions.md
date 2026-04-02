@@ -30,7 +30,7 @@ Client: Nice but the keyboard shortcut isn't working
 
 The reason the shortcuts weren't working was that the buttons or scroll area were "stealing" the focus. This was fixed by setting setFocusPolicy(Qt::NoFocus) on all navigation buttons, zoom buttons, and the QScrollArea. This ensured the main ImageViewer window always retained keyboard focus, allowing keyPressEvent to trigger correctly even after user interaction with the UI.
 
-The application was updated to support passing a directory as a single argument. In main, logic was added to check if a single argument pointed to a directory. If so, it automatically searched for files with common image extensions (.jpg, .png, etc.). All discovered images are then loaded into the viewer, allowing for seamless navigation while maintaining support for individual file paths.
+The application was updated to support passing a directory as a single argument. In main, if the single argument pointed to a directory, we automatically search for files with common image extensions (.jpg, .png, etc.). All discovered images are then loaded into the viewer, allowing for seamless navigation while maintaining support for individual file paths.
 
 Client: Ok in the taskbar, centre the buttons. Separate the taskbar into three zones. The button zone, exactly in the middle, and two info zones on the left. In the left info zone, display text of the like "1/17\t0.317x\t3000 x 3000". 1/17 is the current image index/number of images to cycle through, 0.317x is the current zoom level, and then is the current image resolution.
 
