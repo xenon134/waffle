@@ -54,3 +54,4 @@ CTestTestfile.cmake
 *.dwo
 
 testfiles/
+config.ini

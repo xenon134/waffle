@@ -162,7 +162,9 @@ public:
         });
         connect(btnDelete, &QPushButton::clicked, this, [this]() {
             if (!images.isEmpty()) {
-                QProcess::startDetached("C:\\tools\\delet.exe", QStringList() << images[currentImageIndex]);
+                QSettings configFile(configPath, QSettings::IniFormat);
+                QString deleteExe = configFile.value("deleteCommand", "cmd /c del").toString();
+                QProcess::startDetached(deleteExe, QStringList() << images[currentImageIndex]);
                 infoLabelRight->setText("Deleted!");
             }
         });
@@ -210,7 +212,7 @@ public:
 
             if (!QFileInfo::exists(tempPath)) {
                 QSettings configFile(configPath, QSettings::IniFormat);
-                String magickPath = configFile.value("magickPath", "C:\\Program Files\\ImageMagick-7.1.1-Q16-HDRI\\magick.exe").toString();
+                QString magickPath = configFile.value("magickPath", "C:\\Program Files\\ImageMagick-7.1.1-Q16-HDRI\\magick.exe").toString();
                 int rc = QProcess::execute(magickPath, QStringList() << fileName << tempPath);
                 if (rc != 0) {
                     imageLabel->setText("Failed to convert: " + fi.fileName());

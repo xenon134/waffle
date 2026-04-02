@@ -88,6 +88,8 @@ cmake --build build
 
 Running
 
+Rename config.ini.example to config.ini and place your own settings there.
+
 ```sh
 .\build\Debug\waffle.exe
 ```
