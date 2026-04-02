@@ -1,21 +1,26 @@
 #include <QApplication>
-#include <QWidget>
-#include <QLabel>
-#include <QPixmap>
-#include <QResizeEvent>
-#include <QWheelEvent>
-#include <QKeyEvent>
-#include <QFileInfo>
-#include <QVBoxLayout>
-#include <QHBoxLayout>
-#include <QPushButton>
-#include <QScrollArea>
-#include <QTimer>
-#include <QPainter>
-#include <QStringList>
-#include <QDir>
 #include <QClipboard>
+#include <QCryptographicHash>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QHBoxLayout>
+#include <QKeyEvent>
+#include <QLabel>
+#include <QMouseEvent>  // You will also need this for QMouseEvent in the event filter
+#include <QPainter>
+#include <QPixmap>
 #include <QProcess>
+#include <QPushButton>
+#include <QResizeEvent>
+#include <QScrollArea>
+#include <QScrollBar>
+#include <QStandardPaths>
+#include <QStringList>
+#include <QTimer>
+#include <QVBoxLayout>
+#include <QWheelEvent>
+#include <QWidget>
 
 class ImageViewer : public QWidget {
 public:
@@ -173,11 +178,48 @@ public:
     }
 
     void loadImage(const QString &fileName) {
-        if (originalPixmap.load(fileName)) {
-            setWindowTitle(QFileInfo(fileName).fileName() + " - Waffle");
+        QFileInfo fi(fileName);
+
+        // Determine whether the file needs proxy conversion via ImageMagick
+        QString ext = fi.suffix().toLower();
+        static const QSet<QString> proxyExts = { "heic", "heif", "avif", "jp2", "j2k", "jpx" };
+
+        QString targetLoadPath = fileName;
+        if (proxyExts.contains(ext)) {
+            QFile file(fileName);
+            if (!file.open(QIODevice::ReadOnly)) {
+                imageLabel->setText("Failed to open file: " + fi.fileName());
+                return;
+            }
+
+            QCryptographicHash hash(QCryptographicHash::Md5);
+            while (!file.atEnd()) {
+                QByteArray chunk = file.read(8192);
+                hash.addData(chunk);
+            }
+            QString hex = hash.result().toHex();
+
+            QString tempDir = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
+            QDir().mkpath(tempDir);
+            QString tempPath = QDir(tempDir).filePath(hex + ".png");
+
+            if (!QFileInfo::exists(tempPath)) {
+                int rc = QProcess::execute("C:\\Program Files\\ImageMagick-7.1.1-Q16-HDRI\\magick.exe", QStringList() << fileName << tempPath);
+                if (rc != 0) {
+                    imageLabel->setText("Failed to convert: " + fi.fileName());
+                    return;
+                }
+            }
+
+            targetLoadPath = tempPath;
+        }
+
+        if (originalPixmap.load(targetLoadPath)) {
+            // Use the original filename for UI metadata, but pixels come from the converted PNG when necessary
+            setWindowTitle(fi.fileName() + " - Waffle");
             setZoomState(ZoomState::Fit);
         } else {
-            imageLabel->setText("Failed to load image: " + QFileInfo(fileName).fileName());
+            imageLabel->setText("Failed to load image: " + fi.fileName());
         }
     }
 
@@ -215,10 +257,37 @@ protected:
     }
 
     bool eventFilter(QObject *obj, QEvent *event) override {
-        if (event->type() == QEvent::Wheel) {
-            auto *wheelEv = static_cast<QWheelEvent*>(event);
-            this->wheelEvent(wheelEv);
-            return true;
+        if (obj == scrollArea->viewport()) {
+            if (event->type() == QEvent::MouseButtonPress) {
+                auto *mouseEv = static_cast<QMouseEvent*>(event);
+                if (mouseEv->button() == Qt::LeftButton) {
+                    isPanning = true;
+                    lastMousePos = mouseEv->pos();
+                    scrollArea->setCursor(Qt::ClosedHandCursor);
+                    return true;
+                }
+            } else if (event->type() == QEvent::MouseMove) {
+                auto *mouseEv = static_cast<QMouseEvent*>(event);
+                if (isPanning) {
+                    QPoint delta = mouseEv->pos() - lastMousePos;
+                    lastMousePos = mouseEv->pos();
+                    scrollArea->horizontalScrollBar()->setValue(scrollArea->horizontalScrollBar()->value() - delta.x());
+                    scrollArea->verticalScrollBar()->setValue(scrollArea->verticalScrollBar()->value() - delta.y());
+                    return true;
+                }
+            } else if (event->type() == QEvent::MouseButtonRelease) {
+                auto *mouseEv = static_cast<QMouseEvent*>(event);
+                if (mouseEv->button() == Qt::LeftButton) {
+                    isPanning = false;
+                    scrollArea->setCursor(Qt::ArrowCursor);
+                    return true;
+                }
+            } else if (event->type() == QEvent::Wheel) {
+                auto *wheelEv = static_cast<QWheelEvent*>(event);
+                // forward to our wheelEvent so we can use viewport-relative coords
+                this->wheelEvent(wheelEv);
+                return true;
+            }
         }
         return QWidget::eventFilter(obj, event);
     }
@@ -231,33 +300,52 @@ protected:
     }
 
     void wheelEvent(QWheelEvent *event) override {
-        zoomOffset(event->angleDelta().y());
+        // Mouse position relative to the scrollArea viewport
+        QPoint mousePos = event->position().toPoint();
+        zoomOffset(event->angleDelta().y(), mousePos);
     }
 
 private:
-    void zoomOffset(int direction) {
+    void zoomOffset(int direction, QPoint mousePos) {
         if (originalPixmap.isNull()) return;
-
-        double currentZoom;
+        // 1. Determine old zoom
+        double oldZoom;
         if (zoomState == ZoomState::Fit) {
-            currentZoom = (double)imageLabel->pixmap().width() / originalPixmap.width();
+            oldZoom = (double)imageLabel->pixmap().width() / originalPixmap.width();
         } else if (zoomState == ZoomState::One) {
-            currentZoom = 1.0;
+            oldZoom = 1.0;
         } else {
-            currentZoom = zoomLevel;
+            oldZoom = zoomLevel;
         }
 
+        // 2. Capture current scrollbar positions
+        QPoint oldScroll(scrollArea->horizontalScrollBar()->value(), scrollArea->verticalScrollBar()->value());
+
+        // 3. Compute image coordinate under the mouse (in original pixmap space)
+        QPointF imagePos = QPointF(mousePos + oldScroll) / oldZoom;
+
+        // 4. Compute new zoom level
         if (direction > 0) {
-            if (currentZoom < 0.1) zoomLevel = currentZoom / 0.8;
-            else zoomLevel = currentZoom + 0.1;
+            if (oldZoom < 0.1) zoomLevel = oldZoom / 0.8;
+            else zoomLevel = oldZoom + 0.1;
         } else if (direction < 0) {
-            if (currentZoom < 0.2) zoomLevel = currentZoom * 0.8;
-            else zoomLevel = currentZoom - 0.1;
+            if (oldZoom < 0.2) zoomLevel = oldZoom * 0.8;
+            else zoomLevel = oldZoom - 0.1;
             double minZoom = 1.0 / std::min(originalPixmap.width(), originalPixmap.height());
             if (zoomLevel < minZoom) zoomLevel = minZoom;
+        } else {
+            return;
         }
+
         zoomState = ZoomState::Custom;
+
+        // 5. Apply the new scale first so scroll ranges update
         updateImage();
+
+        // 6. Compute new content position for the same image point and set scrollbars
+        QPointF newContentPos = imagePos * zoomLevel;
+        scrollArea->horizontalScrollBar()->setValue(static_cast<int>(newContentPos.x() - mousePos.x()));
+        scrollArea->verticalScrollBar()->setValue(static_cast<int>(newContentPos.y() - mousePos.y()));
     }
 
     void setZoomState(ZoomState state) {
@@ -323,7 +411,7 @@ private:
         QString zoomStr = QString("%1x").arg(actualZoom, 0, 'f', 3);
         QString resolutionStr = QString("%1 x %2").arg(originalPixmap.width()).arg(originalPixmap.height());
 
-        infoLabelLeft->setText(QString("%1   %2    %3").arg(indexStr, zoomStr, resolutionStr));
+        infoLabelLeft->setText(QString("%1   %2   %3").arg(indexStr, zoomStr, resolutionStr));
     }
 
     QLabel *imageLabel;
@@ -335,6 +423,8 @@ private:
     double zoomLevel;
     QStringList images;
     int currentImageIndex;
+    QPoint lastMousePos;
+    bool isPanning = false;
 };
 
 int main(int argc, char *argv[])

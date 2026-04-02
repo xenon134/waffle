@@ -53,3 +53,9 @@ Done — I implemented the Symmetric Spacer Strategy in main.cpp:
 - `infoLabelLeft` and `infoLabelRight` now use `QSizePolicy::Ignored` horizontally and `setMinimumWidth(0)`, so their text won't bias initial layout sizing.
 - `buttonContainer` is set to `QSizePolicy::Minimum` x `QSizePolicy::Fixed`, and is added with stretch 0; left/right labels are added with stretch 1.
 - `infoLabelLeft` alignment is `Qt::AlignLeft | Qt::AlignVCenter`; `infoLabelRight` is `Qt::AlignRight | Qt::AlignVCenter`.
+
+Later, we also implemented the following changes: when we encounter a file that falls into those extensions, we use magick.exe to convert it to png and save it to %temp%<hash of the file>.png, oh and before that, we check if the converted version already exists. Once we find the png converted version, we load that and pretend as if nothing happened.
+
+Client: Implement a 1. drag-to-scroll feature, and a 2. Zoom to Cursor, which treats the pointer's coordinates as the fixed anchor point or Zoom Pivot.
+
+Added the QPoint lastMousePos and bool isPanning private variables to the ImageViewer class in the private section to track panning state. Updated your eventFilter to include MouseButtonPress, MouseMove, and MouseButtonRelease. I added panning state, implemented drag-to-scroll in the viewport event filter, and implemented zoom-to-mouse, updating wheelEvent and zoomOffset to use the viewport mouse position.
