@@ -3,6 +3,7 @@
 #include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
+#include <QFileDialog>
 #include <QFileInfo>
 #include <QHBoxLayout>
 #include <QKeyEvent>
@@ -34,7 +35,7 @@
 class ImageViewer : public QWidget {
 public:
     void setConfigPath(const QString& path) {
-        configPath = path;
+        configFile = new QSettings(path, QSettings::IniFormat, this);
     }
 
     enum class ZoomState { Fit, One, Custom };
@@ -169,9 +170,8 @@ public:
             }
         });
         connect(btnDelete, &QPushButton::clicked, this, [this]() {
-            if (!images.isEmpty()) {
-                QSettings configFile(configPath, QSettings::IniFormat);
-                QString deleteExe = configFile.value("deleteCommand", "cmd /c del").toString();
+            if (!images.isEmpty() && configFile) {
+                QString deleteExe = configFile->value("deleteCommand", "cmd /c del").toString();
                 // We use QProcess::execute (blocking) or check startDetached return value, 
                 // but since delete might be quick, let's use a non-detached process to check success.
                 QProcess proc;
@@ -306,9 +306,8 @@ public:
             QDir().mkpath(tempDir);
             QString tempPath = QDir(tempDir).filePath(hex + ".png");
 
-            if (!QFileInfo::exists(tempPath)) {
-                QSettings configFile(configPath, QSettings::IniFormat);
-                QString magickPath = configFile.value("magickPath", "C:\\Program Files\\ImageMagick-7.1.1-Q16-HDRI\\magick.exe").toString();
+            if (!QFileInfo::exists(tempPath) && configFile) {
+                QString magickPath = configFile->value("magickPath", "C:\\Program Files\\ImageMagick-7.1.1-Q16-HDRI\\magick.exe").toString();
                 int rc = QProcess::execute(magickPath, QStringList() << fileName << tempPath);
                 if (rc != 0) {
                     imageLabel->setText("Failed to convert: " + fi.fileName());
@@ -361,12 +360,84 @@ public:
         loadImage(images[currentImageIndex]);
     }
 
+    void download(bool saveAs = false) {
+        if (images.isEmpty()) return;
+        QString sourcePath = images[currentImageIndex];
+        QString destPath;
+        if (saveAs) {
+            destPath = QFileDialog::getSaveFileName(this, "Save Image", sourcePath);
+            if (destPath.isEmpty()) return;
+        } else {
+            QString desktopPath = QStandardPaths::writableLocation(QStandardPaths::DesktopLocation);
+            QFileInfo fi(sourcePath);
+            destPath = desktopPath + "/" + fi.fileName();
+            // If file exists, append number
+            int counter = 1;
+            QString baseName = fi.baseName();
+            QString suffix = fi.suffix();
+            while (QFile::exists(destPath)) {
+                destPath = desktopPath + "/" + baseName + "_" + QString::number(counter) + "." + suffix;
+                counter++;
+            }
+        }
+        if (QFile::copy(sourcePath, destPath)) {
+            infoLabelRight->setText("Downloaded to " + QFileInfo(destPath).fileName());
+        } else {
+            infoLabelRight->setText("Download failed!");
+        }
+    }
+
 protected:
     void keyPressEvent(QKeyEvent *event) override {
         if (event->key() == Qt::Key_Left) {
             previousImage();
         } else if (event->key() == Qt::Key_Right) {
             nextImage();
+        } else if (event->key() == Qt::Key_Plus) {
+            zoomOffset(-1, QPoint()); // zoom out
+        } else if (event->key() == Qt::Key_Minus) {
+            zoomOffset(1, QPoint()); // zoom in
+        } else if (event->key() == Qt::Key_1) {
+            setZoomState(ZoomState::One);
+        } else if (event->key() == Qt::Key_S) {
+            if (event->modifiers() & Qt::ControlModifier) {
+                download(true); // save as
+            } else {
+                download(false); // download to desktop
+            }
+        } else if (event->key() == Qt::Key_C) {
+            if (!images.isEmpty()) {
+                QString exePath = QCoreApplication::applicationDirPath() + "/copyimage.exe";
+                QProcess::startDetached(exePath, QStringList() << images[currentImageIndex]);
+                infoLabelRight->setText("Copied to clipboard!");
+            }
+        } else if (event->key() == Qt::Key_R) {
+            if (!images.isEmpty()) {
+                loadImage(images[currentImageIndex]);
+                infoLabelRight->setText("Reloaded!");
+            }
+        } else if (event->key() == Qt::Key_E) {
+            if (!images.isEmpty()) {
+                QProcess::startDetached("mspaint.exe", QStringList() << images[currentImageIndex]);
+                infoLabelRight->setText("Opened in editor");
+            }
+        } else if (event->key() == Qt::Key_Delete) {
+            if (!images.isEmpty() && configFile) {
+                QString deleteExe = configFile->value("deleteCommand", "cmd /c del").toString();
+                QProcess proc;
+                proc.start(deleteExe, QStringList() << images[currentImageIndex]);
+                if (proc.waitForFinished() && proc.exitCode() == 0) {
+                    infoLabelRight->setText("Deleted!");
+                } else {
+                    QString errorMsg;
+                    if (proc.error() == QProcess::FailedToStart) {
+                        errorMsg = "Exe not found!";
+                    } else {
+                        errorMsg = "Exit code " + QString::number(proc.exitCode());
+                    }
+                    infoLabelRight->setText("Fail: " + errorMsg);
+                }
+            }
         } else {
             QWidget::keyPressEvent(event);
         }
@@ -551,7 +622,7 @@ private:
     int currentImageIndex;
     QPoint lastMousePos;
     bool isPanning = false;
-    QString configPath;
+    QSettings* configFile = nullptr;
     
     bool isCasualMode = false;
     QString casualJsonPath;
