@@ -59,3 +59,11 @@ Later, we also implemented the following changes: when we encounter a file that 
 Client: Implement a 1. drag-to-scroll feature, and a 2. Zoom to Cursor, which treats the pointer's coordinates as the fixed anchor point or Zoom Pivot.
 
 Added the QPoint lastMousePos and bool isPanning private variables to the ImageViewer class in the private section to track panning state. Updated your eventFilter to include MouseButtonPress, MouseMove, and MouseButtonRelease. I added panning state, implemented drag-to-scroll in the viewport event filter, and implemented zoom-to-mouse, updating wheelEvent and zoomOffset to use the viewport mouse position.
+
+
+The client wanted a "casual browsing mode" (like in imager.py). The feature was successfully ported to C++. When launched without arguments, the app enters casual mode and:
+1. Scans both hardcoded picture directories for supported image formats.
+2. Loads the JSON persistence file from \%APPDATA%\imager\casual_browsing_mode_images.json, which tracks view counts for each image.
+3. Groups discovered images into frequency buckets (which auto-sorts by view count in ascending order) with a bucket 0 for images not present in the JSON, then shuffles each bucket independently.
+6. When an image is viewed, the view count is updated in the JSON.
+The \isCasualMode\ flag and \casualJsonPath\ variables were added to \ImageViewer\ private members, with all logic confined to \loadImages()\ and \loadImage()\ methods to minimize merge conflicts with your friend's branch work.

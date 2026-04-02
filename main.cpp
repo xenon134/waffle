@@ -23,6 +23,14 @@
 #include <QWidget>
 #include <QSettings>
 
+#include <QVector>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QRandomGenerator>
+#include <map>
+#include <algorithm>
+#include <random>
+
 class ImageViewer : public QWidget {
 public:
     void setConfigPath(const QString& path) {
@@ -188,12 +196,87 @@ public:
     }
 
     void loadImages(const QStringList &fileNames) {
-        images = fileNames;
-        currentImageIndex = 0;
-        if (!images.isEmpty()) {
-            loadImage(images[currentImageIndex]);
+        if (fileNames.isEmpty()) {
+            isCasualMode = true;
+            QString appData = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+            // In Windows this might append organizationName/appName. 
+            // Fallback to explicit APPDATA if preferred, but APPDATA is typically what is meant.
+            QString rawAppData = qEnvironmentVariable("APPDATA");
+            if (!rawAppData.isEmpty()) {
+                casualJsonPath = QDir(rawAppData).filePath("imager/casual_browsing_mode_images.json");
+            } else {
+                casualJsonPath = QDir(appData).filePath("imager/casual_browsing_mode_images.json");
+            }
+            
+            // Scan for files
+            QStringList foundFiles;
+            QStringList dirs = { "D:/deep/Pictures", "D:/deep/Pictures/memes" };
+            QStringList nameFilters;
+            nameFilters << "*.jpg" << "*.jpeg" << "*.jpe" << "*.jfif" << "*.png" << "*.gif" << "*.webp" 
+                        << "*.bmp" << "*.dib" << "*.ico" << "*.tiff" << "*.tif" << "*.svg" << "*.svgz" 
+                        << "*.heic" << "*.heif" << "*.avif" << "*.tga" << "*.psd" << "*.dng" << "*.hdr" 
+                        << "*.exr" << "*.jp2" << "*.j2k" << "*.jpx" << "*.jpm" << "*.mj2" << "*.pnm" 
+                        << "*.pbm" << "*.pgm" << "*.ppm" << "*.xbm" << "*.xpm" << "*.dds";
+
+            for (const QString &d : dirs) {
+                QDir dir(d);
+                if (dir.exists()) {
+                    QFileInfoList list = dir.entryInfoList(nameFilters, QDir::Files | QDir::NoDotAndDotDot);
+                    for (const QFileInfo &fi : list) {
+                        // Using normalized native path separator or just absolute path
+                        foundFiles << QDir::toNativeSeparators(fi.absoluteFilePath());
+                    }
+                }
+            }
+
+            // Read json
+            std::map<QString, int> viewCounts;
+            QFile jsonFile(casualJsonPath);
+            if (jsonFile.open(QIODevice::ReadOnly)) {
+                QJsonDocument doc = QJsonDocument::fromJson(jsonFile.readAll());
+                QJsonObject obj = doc.object();
+                for (auto it = obj.begin(); it != obj.end(); ++it) {
+                    viewCounts[QDir::toNativeSeparators(it.key())] = it.value().toInt();
+                }
+                jsonFile.close();
+            }
+
+            // Group by count
+            std::map<int, QVector<QString>> bins;
+            for (const QString &f : foundFiles) {
+                int count = viewCounts.count(f) ? viewCounts[f] : 0;
+                bins[count].push_back(f);
+            }
+
+            // Shuffle each bin and combine
+            QStringList sortedFiles;
+            std::random_device rd;
+            std::mt19937 g(rd());
+            for (auto &pair : bins) {
+                QVector<QString> &binFiles = pair.second;
+                std::shuffle(binFiles.begin(), binFiles.end(), g);
+                for (const QString &f : binFiles) {
+                    sortedFiles << f;
+                }
+            }
+
+            images = sortedFiles;
+            currentImageIndex = 0;
+            if (!images.isEmpty()) {
+                loadImage(images[currentImageIndex]);
+            } else {
+                imageLabel->setText("No casual images found.");
+            }
+
         } else {
-            imageLabel->setText("No images provided.");
+            isCasualMode = false;
+            images = fileNames;
+            currentImageIndex = 0;
+            if (!images.isEmpty()) {
+                loadImage(images[currentImageIndex]);
+            } else {
+                imageLabel->setText("No images provided.");
+            }
         }
     }
 
@@ -240,6 +323,27 @@ public:
             // Use the original filename for UI metadata, but pixels come from the converted PNG when necessary
             setWindowTitle(fi.fileName() + " - Waffle");
             setZoomState(ZoomState::Fit);
+
+            if (isCasualMode) {
+                QString nativePath = QDir::toNativeSeparators(fileName);
+                QFile jsonFile(casualJsonPath);
+                QJsonObject rootObj;
+                if (jsonFile.open(QIODevice::ReadOnly)) {
+                    QJsonDocument doc = QJsonDocument::fromJson(jsonFile.readAll());
+                    rootObj = doc.object();
+                    jsonFile.close();
+                }
+
+                int currentCount = rootObj[nativePath].toInt(0);
+                rootObj[nativePath] = currentCount + 1;
+
+                QDir().mkpath(QFileInfo(casualJsonPath).absolutePath());
+                if (jsonFile.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+                    QJsonDocument resultDoc(rootObj);
+                    jsonFile.write(resultDoc.toJson(QJsonDocument::Indented));
+                    jsonFile.close();
+                }
+            }
         } else {
             imageLabel->setText("Failed to load image: " + fi.fileName());
         }
@@ -448,6 +552,9 @@ private:
     QPoint lastMousePos;
     bool isPanning = false;
     QString configPath;
+    
+    bool isCasualMode = false;
+    QString casualJsonPath;
 };
 
 int main(int argc, char *argv[])
