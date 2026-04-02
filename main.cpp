@@ -164,8 +164,21 @@ public:
             if (!images.isEmpty()) {
                 QSettings configFile(configPath, QSettings::IniFormat);
                 QString deleteExe = configFile.value("deleteCommand", "cmd /c del").toString();
-                QProcess::startDetached(deleteExe, QStringList() << images[currentImageIndex]);
-                infoLabelRight->setText("Deleted!");
+                // We use QProcess::execute (blocking) or check startDetached return value, 
+                // but since delete might be quick, let's use a non-detached process to check success.
+                QProcess proc;
+                proc.start(deleteExe, QStringList() << images[currentImageIndex]);
+                if (proc.waitForFinished() && proc.exitCode() == 0) {
+                    infoLabelRight->setText("Deleted!");
+                } else {
+                    QString errorMsg;
+                    if (proc.error() == QProcess::FailedToStart) {
+                        errorMsg = "Exe not found!";
+                    } else {
+                        errorMsg = "Exit code " + QString::number(proc.exitCode());
+                    }
+                    infoLabelRight->setText("Fail: " + errorMsg);
+                }
             }
         });
 
