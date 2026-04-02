@@ -21,9 +21,14 @@
 #include <QVBoxLayout>
 #include <QWheelEvent>
 #include <QWidget>
+#include <QSettings>
 
 class ImageViewer : public QWidget {
 public:
+    void setConfigPath(const QString& path) {
+        configPath = path;
+    }
+
     enum class ZoomState { Fit, One, Custom };
 
     ImageViewer() {
@@ -135,7 +140,7 @@ public:
             setZoomState(ZoomState::One);
         });
         // connect(btnMinus, &QPushButton::clicked, this, [this]() { zoomOffset(-1); });
-        // connect(btnPlus, &QPushButton::clicked, this, [this]() { zoomOffset(1); });
+        // connect(btnPlus, &QPushButton::clicked, this, [this]() { zoomOffset(1); })
         connect(btnCopy, &QPushButton::clicked, this, [this]() {
             if (!images.isEmpty()) {
                 QString exePath = QCoreApplication::applicationDirPath() + "/copyimage.exe";
@@ -204,7 +209,9 @@ public:
             QString tempPath = QDir(tempDir).filePath(hex + ".png");
 
             if (!QFileInfo::exists(tempPath)) {
-                int rc = QProcess::execute("C:\\Program Files\\ImageMagick-7.1.1-Q16-HDRI\\magick.exe", QStringList() << fileName << tempPath);
+                QSettings configFile(configPath, QSettings::IniFormat);
+                String magickPath = configFile.value("magickPath", "C:\\Program Files\\ImageMagick-7.1.1-Q16-HDRI\\magick.exe").toString();
+                int rc = QProcess::execute(magickPath, QStringList() << fileName << tempPath);
                 if (rc != 0) {
                     imageLabel->setText("Failed to convert: " + fi.fileName());
                     return;
@@ -425,6 +432,7 @@ private:
     int currentImageIndex;
     QPoint lastMousePos;
     bool isPanning = false;
+    QString configPath;
 };
 
 int main(int argc, char *argv[])
@@ -432,6 +440,17 @@ int main(int argc, char *argv[])
     QApplication app(argc, argv);
 
     ImageViewer viewer;
+
+    // Determine config file path
+    QString configPath;
+    const char* envConfig = getenv("WaffleImager_config");
+    if (envConfig) {
+        configPath = QString::fromLocal8Bit(envConfig);
+    } else {
+        configPath = QCoreApplication::applicationDirPath() + "/config.ini";
+    }
+
+    viewer.setConfigPath(configPath);
 
     if (argc > 1) {
         QStringList args;
