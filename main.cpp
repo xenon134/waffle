@@ -1,5 +1,7 @@
 #include <QApplication>
 #include <QClipboard>
+#include <QMimeData>
+#include <QUrl>
 #include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
@@ -144,8 +146,16 @@ public:
         // connect(btnPlus, &QPushButton::clicked, this, [this]() { zoomOffset(1); })
         connect(btnCopy, &QPushButton::clicked, this, [this]() {
             if (!images.isEmpty()) {
-                QString exePath = QCoreApplication::applicationDirPath() + "/copyimage.exe";
-                QProcess::startDetached(exePath, QStringList() << images[currentImageIndex]);
+                QString filePath = images[currentImageIndex];
+                QMimeData *mimeData = new QMimeData;
+                mimeData->setUrls({QUrl::fromLocalFile(filePath)});
+                mimeData->setText(filePath);
+                
+                QImage img(filePath);
+                if (!img.isNull()) {
+                    mimeData->setImageData(img);
+                }
+                QApplication::clipboard()->setMimeData(mimeData);
                 infoLabelRight->setText("Copied to clipboard!");
             }
         });
@@ -300,8 +310,16 @@ protected:
             }
         } else if (event->key() == Qt::Key_C) {
             if (!images.isEmpty()) {
-                QString exePath = QCoreApplication::applicationDirPath() + "/copyimage.exe";
-                QProcess::startDetached(exePath, QStringList() << images[currentImageIndex]);
+                QString filePath = images[currentImageIndex];
+                QMimeData *mimeData = new QMimeData;
+                mimeData->setUrls({QUrl::fromLocalFile(filePath)});
+                mimeData->setText(filePath);
+                
+                QImage img(filePath);
+                if (!img.isNull()) {
+                    mimeData->setImageData(img);
+                }
+                QApplication::clipboard()->setMimeData(mimeData);
                 infoLabelRight->setText("Copied to clipboard!");
             }
         } else if (event->key() == Qt::Key_R) {

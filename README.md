@@ -33,7 +33,7 @@ waffle.exe C:\Photos\Summer
     - `← / →`: Previous/Next image.
     - `⛶`: Fit image to window.
     - `1:1`: View image at original size.
-    - `⎘`: Copy current image path to clipboard (via `copyimage.exe`).
+    - `⎘`: Copy current image to clipboard.
     - `↺`: Reload original image.
     - `✎`: Open current image in MSPaint.
     - `X`: Run custom delete utility.
