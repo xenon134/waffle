@@ -536,6 +536,22 @@ private:
     QSettings* configFile = nullptr;
 };
 
+QStringList listImageFiles(const QString &path) {
+    QStringList args;
+    QDir dir(path);
+    QStringList filters;
+    filters << "*.jpg" << "*.jpeg" << "*.jpe" << "*.jfif" << "*.png" << "*.gif" << "*.webp" 
+            << "*.bmp" << "*.dib" << "*.ico" << "*.tiff" << "*.tif" << "*.svg" << "*.svgz" 
+            << "*.heic" << "*.heif" << "*.avif" << "*.tga" << "*.psd" << "*.dng" << "*.hdr" 
+            << "*.exr" << "*.jp2" << "*.j2k" << "*.jpx" << "*.jpm" << "*.mj2" << "*.pnm" 
+            << "*.pbm" << "*.pgm" << "*.ppm" << "*.xbm" << "*.xpm" << "*.dds";
+    QFileInfoList list = dir.entryInfoList(filters, QDir::Files);
+    for (const QFileInfo &fileInfo : list) {
+        args << fileInfo.absoluteFilePath();
+    }
+    return args;
+}
+
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
@@ -555,23 +571,32 @@ int main(int argc, char *argv[])
 
     if (argc > 1) {
         QStringList args;
-        if (argc == 2) {
+        if (argc == 2) { // single argument - could be a file or a directory
             QString path = QString::fromLocal8Bit(argv[1]);
             QFileInfo checkFile(path);
             if (checkFile.isDir()) {
-                QDir dir(path);
-                QStringList filters;
-                filters << "*.jpg" << "*.jpeg" << "*.jpe" << "*.jfif" << "*.png" << "*.gif" << "*.webp" 
-        << "*.bmp" << "*.dib" << "*.ico" << "*.tiff" << "*.tif" << "*.svg" << "*.svgz" 
-        << "*.heic" << "*.heif" << "*.avif" << "*.tga" << "*.psd" << "*.dng" << "*.hdr" 
-        << "*.exr" << "*.jp2" << "*.j2k" << "*.jpx" << "*.jpm" << "*.mj2" << "*.pnm" 
-        << "*.pbm" << "*.pgm" << "*.ppm" << "*.xbm" << "*.xpm" << "*.dds";
-                QFileInfoList list = dir.entryInfoList(filters, QDir::Files);
-                for (const QFileInfo &fileInfo : list) {
-                    args << fileInfo.absoluteFilePath();
-                }
+                args = listImageFiles(path);
             } else {
-                args << path;
+                // Load all images from the parent folder, but keep the original file first
+                QFileInfo fi(path);
+                QString parentDir = fi.absolutePath();
+                QString absPath = fi.absoluteFilePath();
+                args = listImageFiles(parentDir);
+
+                int idx = -1;
+                for (int i = 0; i < args.size(); ++i) {
+                    if (QString::compare(args[i], absPath, Qt::CaseInsensitive) == 0) {
+                        idx = i;
+                        break;
+                    }
+                }
+
+                if (idx > 0) {                
+                    std::swap(args[0], args[idx]);
+                } else if (idx == -1) {
+                    // warn that the provided file was not found in the parent directory listing (could be due to unsupported extension)
+                    qWarning("Provided file not found in parent directory listing: %s", qPrintable(absPath));
+                }
             }
         } else {
             for (int i = 1; i < argc; ++i) {
