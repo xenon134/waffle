@@ -1,7 +1,6 @@
 #include <QApplication>
 #include <QClipboard>
-#include <QMimeData>
-#include <QUrl>
+#include <QCloseEvent>
 #include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
@@ -10,7 +9,8 @@
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QLabel>
-#include <QMouseEvent>  // You will also need this for QMouseEvent in the event filter
+#include <QMimeData>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QPixmap>
 #include <QProcess>
@@ -18,13 +18,14 @@
 #include <QResizeEvent>
 #include <QScrollArea>
 #include <QScrollBar>
+#include <QSettings>
 #include <QStandardPaths>
 #include <QStringList>
 #include <QTimer>
+#include <QUrl>
 #include <QVBoxLayout>
 #include <QWheelEvent>
 #include <QWidget>
-#include <QSettings>
 
 class ImageViewer : public QWidget {
 public:
@@ -142,7 +143,7 @@ public:
         connect(btnOne, &QPushButton::clicked, this, [this]() {
             setZoomState(ZoomState::One);
         });
-        // connect(btnMinus, &QPushButton::clicked, this, [this]() { zoomOffset(-1); });
+        // connect(btnMinus, &QPushButton::clicked, this, [this]() { zoomOffset(-1); })
         // connect(btnPlus, &QPushButton::clicked, this, [this]() { zoomOffset(1); })
         connect(btnCopy, &QPushButton::clicked, this, [this]() {
             if (!images.isEmpty()) {
@@ -352,6 +353,24 @@ protected:
         } else {
             QWidget::keyPressEvent(event);
         }
+    }
+
+    void closeEvent(QCloseEvent *event) override {
+        if (configFile) {
+            if (isMaximized()) {
+                configFile->setValue("WindowPosX", -1);
+                configFile->setValue("WindowPosY", -1);
+                configFile->setValue("Width", -1);
+                configFile->setValue("Height", -1);
+            } else {
+                configFile->setValue("WindowPosX", x());
+                configFile->setValue("WindowPosY", y());
+                configFile->setValue("Width", width());
+                configFile->setValue("Height", height());
+            }
+            configFile->sync();
+        }
+        QWidget::closeEvent(event);
     }
 
     void showEvent(QShowEvent *event) override {
@@ -568,6 +587,26 @@ int main(int argc, char *argv[])
     }
 
     viewer.setConfigPath(configPath);
+
+    QSettings settings(configPath, QSettings::IniFormat);
+    int x = settings.value("WindowPosX", viewer.x()).toInt();
+    int y = settings.value("WindowPosY", viewer.y()).toInt();
+    int w = settings.value("Width", 1043).toInt();
+    int h = settings.value("Height", 600).toInt();
+
+    if (x == -1 && y == -1 && w == -1 && h == -1) {
+        viewer.showMaximized();
+    } else {
+        QRect screenRect = QApplication::primaryScreen()->availableGeometry();
+        w = qBound(300, w, screenRect.width() - 200);  // Constrain width and height
+        h = qBound(200, h, screenRect.height() - 200);
+        // Constrain position x and y
+        x = qBound(screenRect.left() - 100, x, screenRect.right() + 100 - w);
+        y = qBound(screenRect.top() - 100, y, screenRect.bottom() + 100 - h);
+
+        viewer.setGeometry(x, y, w, h);
+        viewer.show();
+    }
 
     if (argc > 1) {
         QStringList args;
