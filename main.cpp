@@ -58,13 +58,13 @@ public:
 
         auto *bottomBar = new QWidget;
         bottomBar->setFixedHeight(50);
-        bottomBar->setStyleSheet("background-color: #2b2b2b; color: white;");
+        bottomBar->setStyleSheet("background-color: #EEF3FA; color: white;");
         auto *bottomLayout = new QHBoxLayout(bottomBar);
         bottomLayout->setContentsMargins(10, 0, 10, 0);
 
         // Left info zone (between left edge and buttons)
         infoLabelLeft = new QLabel;
-        infoLabelLeft->setStyleSheet("font-family: 'Courier New', monospace; color: white; font-size: 18px;");
+        infoLabelLeft->setStyleSheet("font-family: 'Courier New', monospace; color: black; font-size: 18px;");
         infoLabelLeft->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
         infoLabelLeft->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
         infoLabelLeft->setMinimumWidth(0);
@@ -99,7 +99,7 @@ public:
         btnDelete->setFocusPolicy(Qt::NoFocus);
         scrollArea->setFocusPolicy(Qt::NoFocus);
         
-        QString btnStyle = "background-color: #444; border: 1px solid #555; padding: 5px 15px; border-radius: 3px;";
+        QString btnStyle = "background-color: #fff; color: black; border: 1px solid #cccccc; padding: 5px 15px; border-radius: 3px;";
         btnPrev->setStyleSheet(btnStyle);
         btnNext->setStyleSheet(btnStyle);
         btnFit->setStyleSheet(btnStyle);
@@ -127,7 +127,7 @@ public:
 
         // Right info zone (between buttons and right edge)
         infoLabelRight = new QLabel;
-        infoLabelRight->setStyleSheet("color: white; font-size: 18px;");
+        infoLabelRight->setStyleSheet("color: black; font-size: 18px;");
         infoLabelRight->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
         infoLabelRight->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
         infoLabelRight->setMinimumWidth(0);
@@ -145,51 +145,10 @@ public:
         });
         // connect(btnMinus, &QPushButton::clicked, this, [this]() { zoomOffset(-1); })
         // connect(btnPlus, &QPushButton::clicked, this, [this]() { zoomOffset(1); })
-        connect(btnCopy, &QPushButton::clicked, this, [this]() {
-            if (!images.isEmpty()) {
-                QString filePath = images[currentImageIndex];
-                QMimeData *mimeData = new QMimeData;
-                mimeData->setUrls({QUrl::fromLocalFile(filePath)});
-                mimeData->setText(filePath);
-                
-                QImage img(filePath);
-                if (!img.isNull()) {
-                    mimeData->setImageData(img);
-                }
-                QApplication::clipboard()->setMimeData(mimeData);
-                infoLabelRight->setText("Copied to clipboard!");
-            }
-        });
-        connect(btnReload, &QPushButton::clicked, this, [this]() {
-            if (!images.isEmpty()) {
-                loadImage(images[currentImageIndex]);
-                infoLabelRight->setText("Reloaded!");
-            }
-        });
-        connect(btnEdit, &QPushButton::clicked, this, [this]() {
-            if (!images.isEmpty()) {
-                QProcess::startDetached("mspaint.exe", QStringList() << images[currentImageIndex]);
-                infoLabelRight->setText("Opened in editor");
-            }
-        });
-        connect(btnDelete, &QPushButton::clicked, this, [this]() {
-            if (!images.isEmpty() && configFile) {
-                QString deleteExe = configFile->value("deleteCommand", "cmd /c del").toString();
-                QProcess proc;
-                proc.start(deleteExe, QStringList() << images[currentImageIndex]);
-                if (proc.waitForFinished() && proc.exitCode() == 0) {
-                    infoLabelRight->setText("Deleted!");
-                } else {
-                    QString errorMsg;
-                    if (proc.error() == QProcess::FailedToStart) {
-                        errorMsg = "Exe not found!";
-                    } else {
-                        errorMsg = "Exit code " + QString::number(proc.exitCode());
-                    }
-                    infoLabelRight->setText("Fail: " + errorMsg);
-                }
-            }
-        });
+        connect(btnCopy, &QPushButton::clicked, this, &ImageViewer::copyImage);
+        connect(btnReload, &QPushButton::clicked, this, &ImageViewer::reloadImage);
+        connect(btnEdit, &QPushButton::clicked, this, &ImageViewer::editImage);
+        connect(btnDelete, &QPushButton::clicked, this, &ImageViewer::deleteImage);
 
         zoomState = ZoomState::Fit;
         zoomLevel = 1.0;
@@ -291,6 +250,55 @@ public:
         }
     }
 
+    void copyImage() {
+        if (!images.isEmpty()) {
+            QString filePath = images[currentImageIndex];
+            QMimeData *mimeData = new QMimeData;
+            mimeData->setUrls({QUrl::fromLocalFile(filePath)});
+            mimeData->setText(QDir::toNativeSeparators(filePath));
+            
+            QImage img(filePath);
+            if (!img.isNull()) {
+                mimeData->setImageData(img);
+            }
+            QApplication::clipboard()->setMimeData(mimeData);
+            infoLabelRight->setText("Copied to clipboard!");
+        }
+    }
+
+    void reloadImage() {
+        if (!images.isEmpty()) {
+            loadImage(images[currentImageIndex]);
+            infoLabelRight->setText("Reloaded!");
+        }
+    }
+
+    void editImage() {
+        if (!images.isEmpty()) {
+            QProcess::startDetached("mspaint.exe", QStringList() << QDir::toNativeSeparators(images[currentImageIndex]));
+            infoLabelRight->setText("Opened in editor");
+        }
+    }
+
+    void deleteImage() {
+        if (!images.isEmpty() && configFile) {
+            QString deleteExe = configFile->value("deleteCommand", "delet.exe").toString();
+            QProcess proc;
+            proc.start(deleteExe, QStringList() << QDir::toNativeSeparators(images[currentImageIndex]));
+            if (proc.waitForFinished() && proc.exitCode() == 0) {
+                infoLabelRight->setText("Deleted!");
+            } else {
+                QString errorMsg;
+                if (proc.error() == QProcess::FailedToStart) {
+                    errorMsg = "Exe not found!";
+                } else {
+                    errorMsg = "Exit code " + QString::number(proc.exitCode());
+                }
+                infoLabelRight->setText("Fail: " + errorMsg);
+            }
+        }
+    }
+
 protected:
     void keyPressEvent(QKeyEvent *event) override {
         if (event->key() == Qt::Key_Left) {
@@ -310,46 +318,13 @@ protected:
                 download(false); // download to desktop
             }
         } else if (event->key() == Qt::Key_C) {
-            if (!images.isEmpty()) {
-                QString filePath = images[currentImageIndex];
-                QMimeData *mimeData = new QMimeData;
-                mimeData->setUrls({QUrl::fromLocalFile(filePath)});
-                mimeData->setText(filePath);
-                
-                QImage img(filePath);
-                if (!img.isNull()) {
-                    mimeData->setImageData(img);
-                }
-                QApplication::clipboard()->setMimeData(mimeData);
-                infoLabelRight->setText("Copied to clipboard!");
-            }
+            copyImage();
         } else if (event->key() == Qt::Key_R) {
-            if (!images.isEmpty()) {
-                loadImage(images[currentImageIndex]);
-                infoLabelRight->setText("Reloaded!");
-            }
+            reloadImage();
         } else if (event->key() == Qt::Key_E) {
-            if (!images.isEmpty()) {
-                QProcess::startDetached("mspaint.exe", QStringList() << images[currentImageIndex]);
-                infoLabelRight->setText("Opened in editor");
-            }
+            editImage();
         } else if (event->key() == Qt::Key_Delete) {
-            if (!images.isEmpty() && configFile) {
-                QString deleteExe = configFile->value("deleteCommand", "cmd /c del").toString();
-                QProcess proc;
-                proc.start(deleteExe, QStringList() << images[currentImageIndex]);
-                if (proc.waitForFinished() && proc.exitCode() == 0) {
-                    infoLabelRight->setText("Deleted!");
-                } else {
-                    QString errorMsg;
-                    if (proc.error() == QProcess::FailedToStart) {
-                        errorMsg = "Exe not found!";
-                    } else {
-                        errorMsg = "Exit code " + QString::number(proc.exitCode());
-                    }
-                    infoLabelRight->setText("Fail: " + errorMsg);
-                }
-            }
+            deleteImage();
         } else {
             QWidget::keyPressEvent(event);
         }
