@@ -1,4 +1,5 @@
 #include <QApplication>
+#include <QAction>
 #include <QClipboard>
 #include <QCloseEvent>
 #include <QCryptographicHash>
@@ -9,6 +10,8 @@
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QLabel>
+#include <QMenu>
+#include <QCursor>
 #include <QMimeData>
 #include <QMouseEvent>
 #include <QPainter>
@@ -83,7 +86,6 @@ public:
         // auto *btnMinus = new QPushButton("-");
         // auto *btnPlus = new QPushButton("+");
         auto *btnCopy = new QPushButton("\u2398");
-        auto *btnReload = new QPushButton("\u27f3");
         auto *btnEdit = new QPushButton("\u270e"); // pencil icon
         auto *btnDelete = new QPushButton("X");
         
@@ -94,7 +96,6 @@ public:
         // btnMinus->setFocusPolicy(Qt::NoFocus);
         // btnPlus->setFocusPolicy(Qt::NoFocus);
         btnCopy->setFocusPolicy(Qt::NoFocus);
-        btnReload->setFocusPolicy(Qt::NoFocus);
         btnEdit->setFocusPolicy(Qt::NoFocus);
         btnDelete->setFocusPolicy(Qt::NoFocus);
         scrollArea->setFocusPolicy(Qt::NoFocus);
@@ -107,20 +108,18 @@ public:
         // btnMinus->setStyleSheet(btnStyle);
         // btnPlus->setStyleSheet(btnStyle);
         btnCopy->setStyleSheet(btnStyle);
-        btnReload->setStyleSheet(btnStyle);
         btnEdit->setStyleSheet(btnStyle);
         btnDelete->setStyleSheet(btnStyle);
 
         buttonLayout->addWidget(btnPrev);
-        buttonLayout->addWidget(btnNext);
         buttonLayout->addWidget(btnFit);
         buttonLayout->addWidget(btnOne);
         // buttonLayout->addWidget(btnPlus);
         // buttonLayout->addWidget(btnMinus);
         buttonLayout->addWidget(btnCopy);
-        buttonLayout->addWidget(btnReload);
         buttonLayout->addWidget(btnEdit);
         buttonLayout->addWidget(btnDelete);
+        buttonLayout->addWidget(btnNext);
 
         buttonContainer->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
         bottomLayout->addWidget(buttonContainer, 0, Qt::AlignCenter);
@@ -146,7 +145,6 @@ public:
         // connect(btnMinus, &QPushButton::clicked, this, [this]() { zoomOffset(-1); })
         // connect(btnPlus, &QPushButton::clicked, this, [this]() { zoomOffset(1); })
         connect(btnCopy, &QPushButton::clicked, this, &ImageViewer::copyImage);
-        connect(btnReload, &QPushButton::clicked, this, &ImageViewer::reloadImage);
         connect(btnEdit, &QPushButton::clicked, this, &ImageViewer::editImage);
         connect(btnDelete, &QPushButton::clicked, this, &ImageViewer::deleteImage);
 
@@ -280,6 +278,13 @@ public:
         }
     }
 
+    void openFileLocation() {
+        if (!images.isEmpty()) {
+            QString path = QDir::toNativeSeparators(images[currentImageIndex]);
+            QProcess::startDetached("explorer.exe", QStringList() << ("/select," + path));
+        }
+    }
+
     void deleteImage() {
         if (!images.isEmpty() && configFile) {
             QString deleteExe = configFile->value("deleteCommand", "delet.exe").toString();
@@ -388,6 +393,19 @@ protected:
                 auto *wheelEv = static_cast<QWheelEvent*>(event);
                 // forward to our wheelEvent so we can use viewport-relative coords
                 this->wheelEvent(wheelEv);
+                return true;
+            } else if (event->type() == QEvent::ContextMenu) {
+                QMenu menu(this);
+                menu.setStyleSheet("QMenu { border: 1px solid #ccc; } QMenu::item { padding: 5px 25px 5px 20px; } QMenu::item:selected { background-color: #e0e0e0; color: black; }");
+                QAction *openLocationAction = menu.addAction("Open file location");
+                QAction *reloadAction = menu.addAction("Reload");
+                
+                QAction *selectedAction = menu.exec(QCursor::pos());
+                if (selectedAction == openLocationAction) {
+                    openFileLocation();
+                } else if (selectedAction == reloadAction) {
+                    reloadImage();
+                }
                 return true;
             }
         }
