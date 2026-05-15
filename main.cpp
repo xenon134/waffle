@@ -166,6 +166,19 @@ public:
     void loadImages(const QStringList &fileNames) {
         if (fileNames.isEmpty()) {
             isCasualMode = true;
+            
+            const bool DEBUG = false; // Set to true to enable logging
+            QString desktopPath = QStandardPaths::writableLocation(QStandardPaths::DesktopLocation);
+            QFile debugFile(desktopPath + "/log.txt");
+            QString dummyString;
+            QTextStream debugStream(&dummyString);
+            
+            if (DEBUG) {
+                debugFile.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text);
+                debugStream.setDevice(&debugFile);
+            }
+            debugStream << "\n--- Starting Casual Mode Load ---\n";
+
             QString appData = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
             // In Windows this might append organizationName/appName. 
             // Fallback to explicit APPDATA if preferred, but APPDATA is typically what is meant.
@@ -175,6 +188,7 @@ public:
             } else {
                 casualJsonPath = QDir(appData).filePath("imager/casual_browsing_mode_images.json");
             }
+            debugStream << "JSON Path: " << casualJsonPath << "\n";
             
             // Scan for files
             QStringList foundFiles;
@@ -182,36 +196,79 @@ public:
             for (const QString &d : dirs) {
                 foundFiles << listImageFiles(d);
             }
+            debugStream << "Found " << foundFiles.size() << " files in directories.\n";
 
             // Read json
             std::map<QString, int> viewCounts;
             QFile jsonFile(casualJsonPath);
-            if (jsonFile.open(QIODevice::ReadOnly)) {
-                QJsonDocument doc = QJsonDocument::fromJson(jsonFile.readAll());
-                QJsonObject obj = doc.object();
-                for (auto it = obj.begin(); it != obj.end(); ++it) {
-                    viewCounts[QDir::toNativeSeparators(it.key())] = it.value().toInt();
+            if (jsonFile.exists()) {
+                debugStream << "JSON file exists.\n";
+                if (!jsonFile.open(QIODevice::ReadOnly)) {
+                    infoLabelRight->setText("Error: Cannot open log file for reading.");
+                    debugStream << "Error: Cannot open JSON file for reading.\n";
+                } else {
+                    QJsonParseError parseError;
+                    QByteArray fileData = jsonFile.readAll();
+                    QJsonDocument doc = QJsonDocument::fromJson(fileData, &parseError);
+                    if (parseError.error != QJsonParseError::NoError) {
+                        infoLabelRight->setText(QString("Error: Log file is corrupted (%1).").arg(parseError.errorString()));
+                        debugStream << "JSON Parse Error: " << parseError.errorString() << "\n";
+                        debugStream << "Raw JSON starts with: " << fileData.left(50) << "\n";
+                    } else {
+                        QJsonObject obj = doc.object();
+                        debugStream << "JSON Object contains " << obj.keys().size() << " keys.\n";
+                        for (auto it = obj.begin(); it != obj.end(); ++it) {
+                            QString nativeKey = QDir::toNativeSeparators(it.key());
+                            viewCounts[nativeKey] = it.value().toInt();
+                        }
+                        if (!viewCounts.empty()) {
+                            debugStream << "Sample mapped view counts (up to 3):\n";
+                            int i = 0;
+                            for (auto it = viewCounts.begin(); it != viewCounts.end() && i < 3; ++it, ++i) {
+                                debugStream << "  " << it->first << " -> " << it->second << "\n";
+                            }
+                        }
+                    }
+                    jsonFile.close();
                 }
-                jsonFile.close();
+            } else {
+                debugStream << "JSON file DOES NOT exist.\n";
             }
 
             // Group by count
             std::map<int, QVector<QString>> bins;
+            int matchCount = 0;
             for (const QString &f : foundFiles) {
-                int count = viewCounts.count(f) ? viewCounts[f] : 0;
+                QString nativeF = QDir::toNativeSeparators(f);
+                int count = viewCounts.count(nativeF) ? viewCounts[nativeF] : 0;
+                if (count > 0) matchCount++;
+                if (viewCounts.count(f) && !viewCounts.count(nativeF)) {
+                    debugStream << "WARNING: File matched un-native path! " << f << "\n";
+                }
                 bins[count].push_back(f);
             }
+            debugStream << "Files with count > 0: " << matchCount << "\n";
 
             // Shuffle each bin and combine
             QStringList sortedFiles;
+            QStringList debugStats;
             std::random_device rd;
             std::mt19937 g(rd());
             for (auto &pair : bins) {
+                int count = pair.first;
                 QVector<QString> &binFiles = pair.second;
+                debugStats << QString("%1x%2").arg(count).arg(binFiles.size());
+                debugStream << "Bin " << count << " has " << binFiles.size() << " files.\n";
                 std::shuffle(binFiles.begin(), binFiles.end(), g);
                 for (const QString &f : binFiles) {
                     sortedFiles << f;
                 }
+            }
+            debugStream.flush();
+            debugFile.close();
+
+            if (!debugStats.isEmpty()) {
+                infoLabelRight->setText(debugStats.join(" "));
             }
 
             images = sortedFiles;
@@ -281,20 +338,34 @@ public:
                 QString nativePath = QDir::toNativeSeparators(fileName);
                 QFile jsonFile(casualJsonPath);
                 QJsonObject rootObj;
-                if (jsonFile.open(QIODevice::ReadOnly)) {
-                    QJsonDocument doc = QJsonDocument::fromJson(jsonFile.readAll());
-                    rootObj = doc.object();
-                    jsonFile.close();
+                if (jsonFile.exists()) {
+                    if (jsonFile.open(QIODevice::ReadOnly)) {
+                        QJsonParseError parseError;
+                        QJsonDocument doc = QJsonDocument::fromJson(jsonFile.readAll(), &parseError);
+                        if (parseError.error != QJsonParseError::NoError) {
+                            infoLabelRight->setText("Error: Log file corrupted on read.");
+                        } else {
+                            rootObj = doc.object();
+                        }
+                        jsonFile.close();
+                    } else {
+                        infoLabelRight->setText("Error: Cannot open log file.");
+                    }
                 }
 
                 int currentCount = rootObj[nativePath].toInt(0);
                 rootObj[nativePath] = currentCount + 1;
 
-                QDir().mkpath(QFileInfo(casualJsonPath).absolutePath());
-                if (jsonFile.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+                if (!QDir().mkpath(QFileInfo(casualJsonPath).absolutePath())) {
+                    infoLabelRight->setText("Error: Failed to create log directory.");
+                } else if (jsonFile.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
                     QJsonDocument resultDoc(rootObj);
-                    jsonFile.write(resultDoc.toJson(QJsonDocument::Indented));
+                    if (jsonFile.write(resultDoc.toJson(QJsonDocument::Indented)) == -1) {
+                         infoLabelRight->setText("Error: Failed to write to log file.");
+                    }
                     jsonFile.close();
+                } else {
+                    infoLabelRight->setText("Error: Cannot open log file to save.");
                 }
             }
         } else {
