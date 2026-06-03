@@ -446,16 +446,20 @@ private:
 
         // 4. Compute new zoom level
         if (direction > 0) {
-            if (oldZoom < 0.1) zoomLevel = oldZoom / 0.8;
-            else zoomLevel = oldZoom + 0.1;
+            // if (oldZoom < 0.1) zoomLevel = oldZoom / 0.8;
+            // else zoomLevel = oldZoom + 0.1;
+
+            zoomLevel = oldZoom * 1.08383;
         } else if (direction < 0) {
-            if (oldZoom < 0.2) zoomLevel = oldZoom * 0.8;
-            else zoomLevel = oldZoom - 0.1;
+            // if (oldZoom < 0.2) zoomLevel = oldZoom * 0.8;
+            // else zoomLevel = oldZoom - 0.1;
+
+            zoomLevel = oldZoom / 1.08383;
+
+            // you cannot reduce an image smaller than a single indivisble pixel
             double minZoom = 1.0 / std::min(originalPixmap.width(), originalPixmap.height());
             if (zoomLevel < minZoom) zoomLevel = minZoom;
-        } else {
-            return;
-        }
+        } else { return; }
 
         zoomState = ZoomState::Custom;
 
@@ -482,14 +486,22 @@ private:
         QPixmap scaledPixmap;
         if (zoomState == ZoomState::Fit) {
             QSize viewportSize = scrollArea->viewport()->size();
-            scaledPixmap = originalPixmap.scaled(viewportSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+
+            // Calculate the effective zoom ratio for Fit mode
+            double ratioW = (double)viewportSize.width() / originalPixmap.width();
+            double ratioH = (double)viewportSize.height() / originalPixmap.height();
+            double effectiveZoom = std::min(ratioW, ratioH);
+
+            scaledPixmap = originalPixmap.scaled(viewportSize, Qt::KeepAspectRatio,
+                effectiveZoom > 4 ? Qt::FastTransformation : Qt::SmoothTransformation);
         } else if (zoomState == ZoomState::One) {
             scaledPixmap = originalPixmap;
         } else {
             QSize newSize = originalPixmap.size() * zoomLevel;
             if (newSize.width() < 1) newSize.setWidth(1);
             if (newSize.height() < 1) newSize.setHeight(1);
-            scaledPixmap = originalPixmap.scaled(newSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+            scaledPixmap = originalPixmap.scaled(newSize, Qt::KeepAspectRatio,
+                zoomLevel > 4? (Qt::FastTransformation): (Qt::SmoothTransformation));
         }
 
         // Handle RGBA images by adding a white background
