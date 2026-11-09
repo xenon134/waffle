@@ -1,2 +1,22 @@
-magickPath=C:\Program Files\ImageMagick-7.1.1-Q16-HDRI\magick.exe
-deleteCommand=delete.exe
+; Waffle Imager configuration
+;
+; Leave a value empty to use the platform default (see comments below).
+; The file is read from the executable's directory unless the
+; WaffleImager_config environment variable points somewhere else.
+; Window geometry (WindowPosX/WindowPosY/Width/Height) is written back here
+; automatically on close.
+
+; ImageMagick executable, used to convert HEIC/HEIF/AVIF/JP2 proxies to PNG.
+; Windows default: C:\Program Files\ImageMagick-7.1.1-Q16-HDRI\magick.exe
+; Linux default:   autodetected "magick" (ImageMagick 7) or "convert" (ImageMagick 6)
+magickPath=
+
+; Program run by the X toolbar button / Delete key to delete an image.
+; Windows default: delet.exe
+; Linux default:   "gio trash", falling back to "trash-put"
+deleteCommand=
+
+; Program run by the pencil toolbar button / E key to edit an image.
+; Windows default: mspaint.exe
+; Linux default:   xdg-open (set e.g. "gimp" or "krita" for real image editing)
+editorCommand=

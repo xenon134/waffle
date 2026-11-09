@@ -6,7 +6,7 @@ A high-performance, lightweight Qt image viewer designed for speed and smooth in
 - **Smooth Navigation**: Pan by dragging the image with the left mouse button.
 - **Zoom to Cursor**: Zoom in and out using the mouse wheel, anchored to your pointer's position.
 - **Multi-format Support**: Native support for common formats (JPG, PNG, BMP, etc.) and extended support for HEIC, AVIF, JP2, and more via ImageMagick.
-- **Quick Actions**: Integrated buttons for copying to clipboard, reloading, opening in MSPaint, and a custom delete utility.
+- **Quick Actions**: Integrated buttons for copying to clipboard, reloading, opening the image in the system editor, and deleting to the recycle bin/trash.
 - **Smart Proxying**: Automatically converts heavier formats to temporary PNGs and caches them by hash for instant re-loading.
 - **RGBA Support**: Automatically composites transparent images onto a clean white background.
 
@@ -16,14 +16,15 @@ A high-performance, lightweight Qt image viewer designed for speed and smooth in
 Launch the application by passing files or a directory:
 ```sh
 # Open a single image
-waffle.exe image.png
+waffle image.png
 
 # Open multiple images
-waffle.exe img1.jpg img2.png img3.webp
+waffle img1.jpg img2.png img3.webp
 
 # Open a directory (scans for all supported images)
-waffle.exe C:\Photos\Summer
+waffle ~/Pictures/Summer
 ```
+On Windows the executable is `waffle.exe`; paths like `C:\Photos\Summer` work there.
 
 ### Navigation
 - **Left/Right Arrows**: Cycle through images in the list.
@@ -35,16 +36,28 @@ waffle.exe C:\Photos\Summer
     - `1:1`: View image at original size.
     - `⎘`: Copy current image to clipboard.
     - `↺`: Reload original image.
-    - `✎`: Open current image in MSPaint.
-    - `X`: Run custom delete utility.
+    - `✎`: Open current image in the system editor (MSPaint on Windows, `xdg-open` or `editorCommand` on Linux).
+    - `X`: Delete the current image (custom command on Windows, trash on Linux).
 
 ### Configuration
 The application looks for a `config.ini` in the same directory as the executable, or at the path specified by the `WaffleImager_config` environment variable.
 
 **Example `config.ini`:**
 ```ini
-magickPath=C:\Program Files\ImageMagick-7.1.1-Q16-HDRI\magick.exe
+; leave a value empty to use the platform default
+magickPath=
+deleteCommand=
+editorCommand=
 ```
+
+| Key | Purpose | Windows default | Linux default |
+| --- | --- | --- | --- |
+| `magickPath` | ImageMagick executable used for HEIC/HEIF/AVIF/JP2 → PNG proxy conversion | `C:\Program Files\ImageMagick-7.1.1-Q16-HDRI\magick.exe` | `magick`, else `convert` from `PATH` |
+| `deleteCommand` | Program run by the `X` button / `Delete` key | `delet.exe` | `gio trash`, else `trash-put` |
+| `editorCommand` | Program run by the `✎` button / `E` key | `mspaint.exe` | `xdg-open` |
+
+If no trash is available for the current filesystem (common on NTFS/FUSE mounts), Waffle asks before
+deleting permanently. Set `deleteCommand` (e.g. `deleteCommand=rm`) to pick your own tool instead.
 
 <details>
 <summary>Installation & Build Details</summary>
@@ -52,7 +65,7 @@ magickPath=C:\Program Files\ImageMagick-7.1.1-Q16-HDRI\magick.exe
 #### Requirements
 
 - CMake 3.16+
-- Qt 5 or Qt 6 (Widgets module)
+- Qt 6 (Widgets module)
 - C++17-capable compiler
 
 #### Installing Qt
@@ -86,12 +99,36 @@ cmake -B build -DCMAKE_PREFIX_PATH="C:\Qt\6.10.2\msvc2022_64"
 cmake --build build
 ```
 
-Running
+### Linux / Unix
 
-Rename config.ini.example to config.ini and place your own settings there.
+#### Requirements
+
+- CMake 3.16+ and a C++17 compiler (`build-essential`)
+- Qt 6 Widgets development package
+- Optional: ImageMagick for HEIC/HEIF/AVIF/JP2 support
+- Optional: `glib2` (`gio trash`) or `trash-cli` (`trash-put`) for the delete button
+- Optional: `xdg-utils` (`xdg-open`) for the edit button
 
 ```sh
-.\build\Debug\waffle.exe
+# Debian / Ubuntu
+sudo apt install build-essential cmake qt6-base-dev libqt6svg6-dev imagemagick xdg-utils
+
+# Fedora
+sudo dnf install gcc-c++ cmake qt6-qtbase-devel qt6-qtsvg-devel ImageMagick xdg-utils
+```
+
+#### Build
+
+```sh
+cmake -S . -B build-linux -DCMAKE_BUILD_TYPE=Release
+cmake --build build-linux -j"$(nproc)"
+```
+
+Running
+
+```sh
+cp config.ini.example config.ini   # optional, then edit it
+./build-linux/waffle path/to/image.jpg
 ```
 
 </details>
