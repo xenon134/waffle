@@ -18,6 +18,6 @@ endif()
 
 set(CMAKE_AUTOMOC ON)
 
-add_executable(waffle WIN32 main.cpp)
+add_executable(waffle WIN32 main.cpp platform.cpp platform.h)
 
 target_link_libraries(waffle PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)

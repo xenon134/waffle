@@ -44,3 +44,6 @@ The client wanted a "casual browsing mode" (like in imager.py). The feature was 
 3. Groups discovered images into frequency buckets (which auto-sorts by view count in ascending order) with a bucket 0 for images not present in the JSON, then shuffles each bucket independently.
 6. When an image is viewed, the view count is updated in the JSON.
 The \isCasualMode\ flag and \casualJsonPath\ variables were added to \ImageViewer\ private members, with all logic confined to \loadImages()\ and \loadImage()\ methods to minimize merge conflicts with your friend's branch work.
+
+Later the project was ported to build and run on Linux from the same source tree. All Windows-specific shell-outs moved into platform.h/platform.cpp: mspaint.exe, explorer.exe /select, delet.exe and the ImageMagick path on Windows; xdg-open, org.freedesktop.FileManager1 and gio trash/trash-put on Linux. The hardcoded casual-mode picture directories became the "casualDirectories" config key, which takes a semicolon-separated list and defaults to D:/deep/Pictures;D:/deep/Pictures/memes on Windows and the XDG Pictures folder on Linux.
+

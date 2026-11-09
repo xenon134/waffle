@@ -11,6 +11,7 @@
 #include <QKeyEvent>
 #include <QLabel>
 #include <QMenu>
+#include <QMessageBox>
 #include <QCursor>
 #include <QMimeData>
 #include <QMouseEvent>
@@ -34,9 +35,13 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QRandomGenerator>
+#include <QSet>
+#include <QTextStream>
 #include <map>
 #include <algorithm>
 #include <random>
+
+#include "platform.h"
 
 QStringList listImageFiles(const QString &path);
 
@@ -44,6 +49,27 @@ class ImageViewer : public QWidget {
 public:
     void setConfigPath(const QString& path) {
         configFile = new QSettings(path, QSettings::IniFormat, this);
+    }
+
+    // Reads a config key, falling back to `defaultValue` when the key is
+    // missing or deliberately left empty (empty means "use platform default").
+    QString configValue(const QString &key, const QString &defaultValue) const {
+        const QString value = configFile ? configFile->value(key).toString().trimmed() : QString();
+        return value.isEmpty() ? defaultValue : value;
+    }
+
+    // Reads a semicolon-separated list of directories from the config, falling
+    // back to `defaults` when the key is empty.
+    QStringList configPathList(const QString &key, const QStringList &defaults) const {
+        const QString raw = configValue(key, QString());
+        if (raw.isEmpty()) return defaults;
+        QStringList paths;
+        const QStringList parts = raw.split(';', Qt::SkipEmptyParts);
+        for (const QString &part : parts) {
+            const QString path = part.trimmed();
+            if (!path.isEmpty()) paths << QDir::fromNativeSeparators(path);
+        }
+        return paths.isEmpty() ? defaults : paths;
     }
 
     enum class ZoomState { Fit, One, Custom };
@@ -168,8 +194,8 @@ public:
             isCasualMode = true;
             
             const bool DEBUG = false; // Set to true to enable logging
-            QString desktopPath = QStandardPaths::writableLocation(QStandardPaths::DesktopLocation);
-            QFile debugFile(desktopPath + "/log.txt");
+            const QString desktopPath = Platform::desktopDirectory();
+            QFile debugFile(QDir(desktopPath).filePath("log.txt"));
             QString dummyString;
             QTextStream debugStream(&dummyString);
             
@@ -192,7 +218,8 @@ public:
             
             // Scan for files
             QStringList foundFiles;
-            QStringList dirs = { "D:/deep/Pictures", "D:/deep/Pictures/memes" };
+            const QStringList dirs = configPathList("casualDirectories", Platform::defaultCasualDirectories());
+            debugStream << "Scanning " << dirs.size() << " directories.\n";
             for (const QString &d : dirs) {
                 foundFiles << listImageFiles(d);
             }
@@ -318,10 +345,10 @@ public:
             QString tempPath = QDir(tempDir).filePath(hex + ".png");
 
             if (!QFileInfo::exists(tempPath) && configFile) {
-                QString magickPath = configFile->value("magickPath", "C:\\Program Files\\ImageMagick-7.1.1-Q16-HDRI\\magick.exe").toString();
+                const QString magickPath = configValue("magickPath", Platform::defaultMagickPath());
                 int rc = QProcess::execute(magickPath, QStringList() << fileName << tempPath);
                 if (rc != 0) {
-                    imageLabel->setText("Failed to convert: " + fi.fileName());
+                    imageLabel->setText(QString("Failed to convert %1 (check that ImageMagick is installed, or set magickPath in config.ini)").arg(fi.fileName()));
                     return;
                 }
             }
@@ -393,15 +420,15 @@ public:
             destPath = QFileDialog::getSaveFileName(this, "Save Image", sourcePath);
             if (destPath.isEmpty()) return;
         } else {
-            QString desktopPath = QStandardPaths::writableLocation(QStandardPaths::DesktopLocation);
+            const QString desktopPath = Platform::desktopDirectory();
             QFileInfo fi(sourcePath);
-            destPath = desktopPath + "/" + fi.fileName();
+            destPath = QDir(desktopPath).filePath(fi.fileName());
             // If file exists, append number
             int counter = 1;
             QString baseName = fi.baseName();
             QString suffix = fi.suffix();
             while (QFile::exists(destPath)) {
-                destPath = desktopPath + "/" + baseName + "_" + QString::number(counter) + "." + suffix;
+                destPath = QDir(desktopPath).filePath(baseName + "_" + QString::number(counter) + "." + suffix);
                 counter++;
             }
         }
@@ -437,33 +464,46 @@ public:
 
     void editImage() {
         if (!images.isEmpty()) {
-            QProcess::startDetached("mspaint.exe", QStringList() << QDir::toNativeSeparators(images[currentImageIndex]));
-            infoLabelRight->setText("Opened in editor");
+            const QString error = Platform::openInEditor(
+                images[currentImageIndex],
+                configValue("editorCommand", Platform::defaultEditorCommand()));
+            infoLabelRight->setText(error.isEmpty() ? "Opened in editor" : "Fail: " + error);
         }
     }
 
     void openFileLocation() {
         if (!images.isEmpty()) {
-            QString path = QDir::toNativeSeparators(images[currentImageIndex]);
-            QProcess::startDetached("explorer.exe", QStringList() << ("/select," + path));
+            const QString error = Platform::revealInFileManager(images[currentImageIndex]);
+            if (!error.isEmpty()) infoLabelRight->setText("Fail: " + error);
         }
     }
 
     void deleteImage() {
         if (!images.isEmpty() && configFile) {
-            QString deleteExe = configFile->value("deleteCommand", "delet.exe").toString();
-            QProcess proc;
-            proc.start(deleteExe, QStringList() << QDir::toNativeSeparators(images[currentImageIndex]));
-            if (proc.waitForFinished() && proc.exitCode() == 0) {
+            const QString filePath = images[currentImageIndex];
+            const Platform::DeleteOutcome outcome = Platform::deleteFile(
+                filePath,
+                configValue("deleteCommand", Platform::defaultDeleteCommand()));
+
+            if (outcome.status == Platform::DeleteOutcome::Deleted) {
                 infoLabelRight->setText("Deleted!");
-            } else {
-                QString errorMsg;
-                if (proc.error() == QProcess::FailedToStart) {
-                    errorMsg = "Exe not found!";
+            } else if (outcome.status == Platform::DeleteOutcome::TrashUnavailable) {
+                // No trash on this filesystem (e.g. an NTFS/FUSE mount), so ask
+                // before doing something irreversible.
+                const auto answer = QMessageBox::warning(
+                    this, "Delete image",
+                    QString("The trash is not available for this location.\n\n"
+                            "Delete \"%1\" permanently?").arg(QFileInfo(filePath).fileName()),
+                    QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
+                if (answer != QMessageBox::Yes) {
+                    infoLabelRight->setText("Delete cancelled");
+                } else if (QFile::remove(filePath)) {
+                    infoLabelRight->setText("Deleted!");
                 } else {
-                    errorMsg = "Exit code " + QString::number(proc.exitCode());
+                    infoLabelRight->setText("Fail: could not delete " + QFileInfo(filePath).fileName());
                 }
-                infoLabelRight->setText("Fail: " + errorMsg);
+            } else {
+                infoLabelRight->setText("Fail: " + outcome.message);
             }
         }
     }
@@ -730,15 +770,13 @@ private:
 QStringList listImageFiles(const QString &path) {
     QStringList args;
     QDir dir(path);
-    QStringList filters;
-    filters << "*.jpg" << "*.jpeg" << "*.jpe" << "*.jfif" << "*.png" << "*.gif" << "*.webp" 
-            << "*.bmp" << "*.dib" << "*.ico" << "*.tiff" << "*.tif" << "*.svg" << "*.svgz" 
-            << "*.heic" << "*.heif" << "*.avif" << "*.tga" << "*.psd" << "*.dng" << "*.hdr" 
-            << "*.exr" << "*.jp2" << "*.j2k" << "*.jpx" << "*.jpm" << "*.mj2" << "*.pnm" 
-            << "*.pbm" << "*.pgm" << "*.ppm" << "*.xbm" << "*.xpm" << "*.dds";
-    QFileInfoList list = dir.entryInfoList(filters, QDir::Files);
+    // Filter by suffix ourselves instead of using a glob list: QDir globs are
+    // case-sensitive on Linux, so an "*.jpg" filter would miss "IMG_0001.JPG".
+    const QFileInfoList list = dir.entryInfoList(QDir::Files);
     for (const QFileInfo &fileInfo : list) {
-        args << fileInfo.absoluteFilePath();
+        if (Platform::isSupportedImageSuffix(fileInfo.suffix())) {
+            args << fileInfo.absoluteFilePath();
+        }
     }
     return args;
 }
